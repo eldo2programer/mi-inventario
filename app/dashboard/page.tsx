@@ -1,5 +1,5 @@
 "use client";
-import { useState, useRef, useMemo, ChangeEvent, useEffect } from "react";
+import { useState, useRef, useMemo, ChangeEvent, useEffect, useCallback } from "react";
 import { UserButton, useUser, useAuth } from "@clerk/nextjs";
 import { motion, AnimatePresence } from "framer-motion";
 import { getSupabaseClient } from "../lib/supabase";
@@ -55,13 +55,15 @@ export default function Dashboard() {
   const [modalidadMayor, setModalidadMayor] = useState("Al Detal");
   const [minimoMayor, setMinimoMayor] = useState("");
 
-  const cerrarModal = () => {
+  // --- FUNCIONES CORREGIDAS (Ordenadas para evitar errores de hoisting) ---
+
+  const cerrarModal = useCallback(() => {
     setShowModal(false); setEditandoId(null); setNombre(""); setDescripcion(""); setPrecio(""); setCosto("");
     setStock(""); setImagenes([]); setEsOferta(false); setPorcentaje(0); setCategoria("General");
     setTallas([]); setTallaInput(""); setTipoVenta("Unidad"); setModalidadMayor("Al Detal"); setMinimoMayor("");
-  };
+  }, []);
 
-  const fetchProductos = async () => {
+  const fetchProductos = useCallback(async () => {
     if (!user) return;
     try {
       const token = await getToken({ template: 'supabase' });
@@ -76,13 +78,13 @@ export default function Dashboard() {
     } catch (error) {
       console.error("Error cargando productos:", error);
     }
-  };
+  }, [user, getToken]);
 
   useEffect(() => {
     if (isLoaded && user) {
       fetchProductos();
     }
-  }, [user, isLoaded]);
+  }, [user, isLoaded, fetchProductos]);
 
   const stats = useMemo(() => {
     const inversionTotal = productos.reduce((acc, p) => acc + (Number(p.costo) * Number(p.stock)), 0);
@@ -179,10 +181,8 @@ export default function Dashboard() {
 
     try {
       const token = await getToken({ template: 'supabase' });
-      if (!token) {
-        alert("Tu sesión ha expirado. Por favor, recarga la página.");
-        return;
-      }
+      if (!token) throw new Error("Sesión expirada");
+      
       const supabase = await getSupabaseClient(token);
 
       if (editandoId) {
@@ -200,7 +200,7 @@ export default function Dashboard() {
       fetchProductos(); 
       cerrarModal();    
     } catch (err: unknown) {
-      const error = err as { message?: string; code?: string };
+      const error = err as { message?: string };
       console.error("Error detallado:", error);
       alert(`Error al guardar: ${error.message || "Error desconocido"}`);
     }
@@ -309,6 +309,7 @@ export default function Dashboard() {
           </AnimatePresence>
         </div>
 
+        {/* Modal de Detalle */}
         <AnimatePresence>
           {productoSeleccionado && (
             <div className="fixed inset-0 bg-slate-900/95 backdrop-blur-md flex items-center justify-center z-50 p-4" onClick={() => setProductoSeleccionado(null)}>
@@ -351,14 +352,6 @@ export default function Dashboard() {
                       </span>
                     </div>
                   </div>
-                  {productoSeleccionado.categoria === "Ropa" && productoSeleccionado.tallas && productoSeleccionado.tallas.length > 0 && (
-                    <div className="mt-6 p-6 bg-indigo-50 rounded-[2rem] text-center border border-indigo-100">
-                      <p className="text-[10px] font-black text-indigo-400 uppercase mb-3 tracking-widest">Tallas Disponibles</p>
-                      <div className="flex gap-2 flex-wrap justify-center">
-                        {productoSeleccionado.tallas.map(t => <span key={t} className="px-3 py-1.5 bg-white text-indigo-600 rounded-xl text-xs font-black shadow-sm">{t}</span>)}
-                      </div>
-                    </div>
-                  )}
                   <div className="mt-8">
                     <p className="text-[10px] font-black text-slate-400 uppercase mb-2 ml-2 tracking-widest">Notas Internas</p>
                     <div className="bg-slate-50 p-6 rounded-[2rem] text-gray-600 text-sm italic border border-slate-100">
@@ -377,6 +370,7 @@ export default function Dashboard() {
           )}
         </AnimatePresence>
 
+        {/* Modal de Registro */}
         <AnimatePresence>
           {showModal && (
             <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md flex items-center justify-center z-50 p-4 overflow-y-auto">
@@ -389,6 +383,7 @@ export default function Dashboard() {
                       {CATEGORIAS.filter(c => c !== "Todos" && c !== "Agotándose").map(c => <option key={c} value={c}>{c}</option>)}
                     </select>
                   </div>
+                  
                   {categoria === "Ropa" && (
                     <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="p-5 bg-indigo-50 rounded-[2rem] border border-indigo-100 shadow-inner">
                       <p className="text-[9px] font-black text-indigo-400 mb-2 uppercase tracking-widest ml-2">Gestión de Tallas</p>
@@ -401,6 +396,7 @@ export default function Dashboard() {
                       </div>
                     </motion.div>
                   )}
+
                   <div className="p-6 bg-slate-50 rounded-[2.5rem] border border-slate-200 space-y-5 shadow-inner">
                     <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest text-center">Configuración de Venta</p>
                     <div className="grid grid-cols-3 gap-2">
@@ -417,13 +413,16 @@ export default function Dashboard() {
                       <input type="number" value={minimoMayor} onChange={(e) => setMinimoMayor(e.target.value)} placeholder="Mínimo de unidades..." className="w-full p-4 bg-white rounded-2xl ring-1 ring-purple-100 text-xs font-bold outline-none text-slate-900" />
                     )}
                   </div>
+
                   <div onClick={() => fileInputRef.current?.click()} className="w-full h-24 bg-slate-50 border-2 border-dashed border-slate-200 rounded-[2rem] flex items-center justify-center p-4 cursor-pointer overflow-x-auto">
                     {imagenes.map((img, i) => <img key={i} src={img} className="h-full rounded-xl mr-2 shadow-sm" alt="" />)}
                     {imagenes.length === 0 && <span className="text-[10px] font-black uppercase text-slate-400">📸 Subir Fotos</span>}
                   </div>
                   <input type="file" ref={fileInputRef} onChange={handleMultipleImages} multiple accept="image/*" className="hidden" />
+
                   <input value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder="Nombre del artículo" className="w-full p-4 bg-slate-50 rounded-2xl ring-1 ring-slate-200 font-bold outline-none text-slate-900" />
                   <textarea value={descripcion} onChange={(e) => setDescripcion(e.target.value)} placeholder="Descripción..." className="w-full p-4 bg-slate-50 rounded-2xl h-24 resize-none ring-1 ring-slate-200 italic text-sm outline-none text-slate-900" />
+
                   <div className="grid grid-cols-3 gap-3">
                     <div>
                       <label className="text-[8px] font-black ml-3 uppercase text-green-600">Costo $</label>
@@ -438,6 +437,7 @@ export default function Dashboard() {
                       <input value={stock} onChange={(e) => setStock(e.target.value)} type="number" className="p-4 bg-slate-100 rounded-2xl w-full ring-1 ring-slate-200 font-bold outline-none text-slate-900" />
                     </div>
                   </div>
+
                   <div className={`p-6 rounded-[2.5rem] shadow-sm ${esOferta ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white' : 'bg-slate-50 text-slate-500 border border-slate-200'}`}>
                     <div className="flex justify-between items-center font-black text-[10px] uppercase">
                       <span>¿Activar Promoción?</span>
@@ -451,6 +451,7 @@ export default function Dashboard() {
                     )}
                   </div>
                 </div>
+
                 <div className="mt-10 flex gap-4">
                   <button onClick={cerrarModal} className="flex-1 text-[10px] font-black uppercase text-slate-400 hover:text-red-500 transition-colors">Cancelar</button>
                   <button onClick={guardarProducto} className="flex-[2] py-5 bg-gradient-to-r from-blue-600 to-indigo-700 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-xl">
