@@ -1,10 +1,9 @@
 "use client";
 import { useState, useRef, useMemo, ChangeEvent, useEffect } from "react";
 import { UserButton, useUser, useAuth } from "@clerk/nextjs";
-import { motion, AnimatePresence, LayoutGroup } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { getSupabaseClient } from "../lib/supabase";
 
-// --- Tipado Completo (No falta nada) ---
 interface Producto {
   id: string;
   nombre: string;
@@ -16,52 +15,22 @@ interface Producto {
   descuento: number;
   imagenes: string[];
   categoria: string;
-  tallas: string[];
-  tipoventa: string;
-  modalidadmayor: string;
-  minimomayor?: number;
+  tallas?: string[];
+  tipo_venta: string;
+  modalidad_mayor: string;
+  minimo_mayor?: number;
   user_id: string;
 }
 
 const CATEGORIAS = ["Todos", "Agotándose", "General", "Cosméticos", "Comida", "Ropa", "Joyería", "Limpieza"];
-const TALLAS_DISPONIBLES = ["Única", "XS", "S", "M", "L", "XL", "XXL", "36", "38", "40", "42", "44"];
-
-// --- Variantes de Animación de Alto Impacto ---
-const containerVariants = {
-  hidden: { opacity: 0 },
-  visible: { 
-    opacity: 1,
-    transition: { staggerChildren: 0.1, delayChildren: 0.2 }
-  }
-};
-
-const itemVariants = {
-  hidden: { y: 30, opacity: 0, scale: 0.95 },
-  visible: { 
-    y: 0, 
-    opacity: 1, 
-    scale: 1,
-    transition: { type: "spring", stiffness: 100, damping: 15 }
-  },
-  exit: { opacity: 0, scale: 0.5, transition: { duration: 0.2 } }
-};
-
-const modalVariants = {
-  hidden: { opacity: 0, y: 100, scale: 0.9 },
-  visible: { opacity: 1, y: 0, scale: 1, transition: { type: "spring", damping: 25, stiffness: 300 } },
-  exit: { opacity: 0, y: 100, scale: 0.9, transition: { duration: 0.3 } }
-};
 
 export default function Dashboard() {
   const { user, isLoaded } = useUser();
   const { getToken } = useAuth(); 
   const fileInputRef = useRef<HTMLInputElement>(null);
-  
-  // --- Estados de Datos ---
   const [productos, setProductos] = useState<Producto[]>([]);
-  const [loading, setLoading] = useState(true);
 
-  // --- Estados de UI ---
+  // Estados de UI
   const [busqueda, setBusqueda] = useState("");
   const [filtroCategoria, setFiltroCategoria] = useState("Todos");
   const [orden, setOrden] = useState("nombre");
@@ -70,7 +39,7 @@ export default function Dashboard() {
   const [productoSeleccionado, setProductoSeleccionado] = useState<Producto | null>(null);
   const [fotoActual, setFotoActual] = useState(0);
 
-  // --- Estados del Formulario (Restaurados todos) ---
+  // Estados del Formulario
   const [nombre, setNombre] = useState("");
   const [descripcion, setDescripcion] = useState("");
   const [precio, setPrecio] = useState("");
@@ -80,111 +49,95 @@ export default function Dashboard() {
   const [esOferta, setEsOferta] = useState(false);
   const [porcentaje, setPorcentaje] = useState(0);
   const [categoria, setCategoria] = useState("General");
-  const [tallasSel, setTallasSel] = useState<string[]>([]);
+  const [tallaInput, setTallaInput] = useState("");
+  const [tallas, setTallas] = useState<string[]>([]);
   const [tipoVenta, setTipoVenta] = useState("Unidad");
   const [modalidadMayor, setModalidadMayor] = useState("Al Detal");
   const [minimoMayor, setMinimoMayor] = useState("");
 
-  useEffect(() => {
-    if (isLoaded && user) fetchProductos();
-  }, [user, isLoaded]);
+  const cerrarModal = () => {
+    setShowModal(false); setEditandoId(null); setNombre(""); setDescripcion(""); setPrecio(""); setCosto("");
+    setStock(""); setImagenes([]); setEsOferta(false); setPorcentaje(0); setCategoria("General");
+    setTallas([]); setTallaInput(""); setTipoVenta("Unidad"); setModalidadMayor("Al Detal"); setMinimoMayor("");
+  };
 
   const fetchProductos = async () => {
+    if (!user) return;
     try {
-      setLoading(true);
       const token = await getToken({ template: 'supabase' });
       const supabase = await getSupabaseClient(token);
-      const { data, error } = await supabase.from('productos').select('*').order('nombre', { ascending: true });
+      const { data, error } = await supabase
+        .from('productos')
+        .select('*')
+        .order('nombre', { ascending: true });
+
       if (error) throw error;
-      setProductos(data || []);
-    } catch (err) {
-      console.error("Error cargando productos:", err);
-    } finally {
-      setLoading(false);
+      if (data) setProductos(data as Producto[]);
+    } catch (error) {
+      console.error("Error cargando productos:", error);
     }
   };
 
-  const guardarProducto = async () => {
-    if (!user) return alert("Debes iniciar sesión");
-    if (!nombre || !precio || !stock) return alert("Por favor rellena Nombre, Precio y Stock");
+  useEffect(() => {
+    if (isLoaded && user) {
+      fetchProductos();
+    }
+  }, [user, isLoaded]);
 
-    // CORRECCIÓN CLAVE: Nombres de columnas en minúsculas para Supabase
-    const datosBase = {
-      nombre,
-      descripcion,
-      precio: Number(precio),
-      costo: Number(costo) || 0,
-      stock: Number(stock),
-      oferta: esOferta,
-      descuento: porcentaje,
-      categoria,
-      tallas: tallasSel,
-      tipoventa: tipoVenta, 
-      modalidadmayor: modalidadMayor,
-      user_id: user.id, 
-      imagenes: imagenes.length > 0 ? imagenes : ["https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=600"],
-      minimomayor: modalidadMayor === "Al Mayor" ? Number(minimoMayor) : null 
+  const stats = useMemo(() => {
+    const inversionTotal = productos.reduce((acc, p) => acc + (Number(p.costo) * Number(p.stock)), 0);
+    const ventaProyectada = productos.reduce((acc, p) => {
+      const pFinal = p.oferta ? p.precio * (1 - p.descuento / 100) : p.precio;
+      return acc + (pFinal * p.stock);
+    }, 0);
+    return {
+      inversion: inversionTotal,
+      ganancia: ventaProyectada - inversionTotal,
+      bajoStock: productos.filter(p => p.stock <= 5).length,
+      totalUnidades: productos.reduce((acc, p) => acc + Number(p.stock), 0)
     };
+  }, [productos]);
 
+  const productosFiltrados = useMemo(() => {
+    let filtrados = productos.filter(p => p.nombre.toLowerCase().includes(busqueda.toLowerCase()));
+    if (filtroCategoria === "Agotándose") filtrados = filtrados.filter(p => p.stock <= 5);
+    else if (filtroCategoria !== "Todos") filtrados = filtrados.filter(p => p.categoria === filtroCategoria);
+
+    return [...filtrados].sort((a, b) => {
+      if (orden === "nombre") return a.nombre.localeCompare(b.nombre);
+      if (orden === "precio-min") return a.precio - b.precio;
+      if (orden === "precio-max") return b.precio - a.precio;
+      return 0;
+    });
+  }, [productos, busqueda, orden, filtroCategoria]);
+
+  const ajustarStock = async (id: string, cant: number) => {
+    const producto = productos.find(p => p.id === id);
+    if (!producto || !user) return;
+    const nuevoStock = Math.max(0, Number(producto.stock) + cant);
+    setProductos(prev => prev.map(p => p.id === id ? { ...p, stock: nuevoStock } : p));
     try {
       const token = await getToken({ template: 'supabase' });
       const supabase = await getSupabaseClient(token);
-
-      if (editandoId) {
-        const { error } = await supabase.from('productos').update(datosBase).eq('id', editandoId);
-        if (error) throw error;
-      } else {
-        const { error } = await supabase.from('productos').insert([{
-          ...datosBase,
-          id: window.crypto.randomUUID() // Web API segura para linter
-        }]);
-        if (error) throw error;
-      }
-
+      const { error } = await supabase.from('productos').update({ stock: nuevoStock }).eq('id', id);
+      if (error) throw error;
+    } catch (error) {
+      alert("Error: No se pudo sincronizar el stock.");
       fetchProductos();
-      cerrarModal();
-      alert("¡Registro guardado con éxito!");
-    } catch (err: any) {
-      alert(`Error de base de datos: ${err.message}`);
     }
   };
 
   const borrarProducto = async (id: string) => {
-    if (!confirm("¿Seguro que deseas eliminar este producto permanentemente?")) return;
+    if (!confirm("¿Deseas eliminar este registro?")) return;
     try {
       const token = await getToken({ template: 'supabase' });
       const supabase = await getSupabaseClient(token);
       const { error } = await supabase.from('productos').delete().eq('id', id);
       if (error) throw error;
       fetchProductos();
-    } catch (err) {
-      console.error("Error al borrar:", err);
+    } catch (error) {
+      alert("Error al eliminar");
     }
-  };
-
-  const ajustarStock = async (id: string, cambio: number) => {
-    const prod = productos.find(p => p.id === id);
-    if (!prod) return;
-    const nuevoStock = Math.max(0, prod.stock + cambio);
-    try {
-      const token = await getToken({ template: 'supabase' });
-      const supabase = await getSupabaseClient(token);
-      const { error } = await supabase.from('productos').update({ stock: nuevoStock }).eq('id', id);
-      if (error) throw error;
-      setProductos(productos.map(p => p.id === id ? { ...p, stock: nuevoStock } : p));
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
-  const cerrarModal = () => {
-    setShowModal(false); setEditandoId(null); setNombre(""); setDescripcion(""); setPrecio(""); setCosto("");
-    setStock(""); setImagenes([]); setEsOferta(false); setCategoria("General");
-    setTallasSel([]); setPorcentaje(0); setTipoVenta("Unidad"); setModalidadMayor("Al Detal"); setMinimoMayor("");
-  };
-
-  const toggleTalla = (talla: string) => {
-    setTallasSel(prev => prev.includes(talla) ? prev.filter(t => t !== talla) : [...prev, talla]);
   };
 
   const handleMultipleImages = (e: ChangeEvent<HTMLInputElement>) => {
@@ -196,380 +149,313 @@ export default function Dashboard() {
     });
   };
 
-  // --- Lógica de Filtros y Estadísticas ---
-  const stats = useMemo(() => ({
-    inversion: productos.reduce((acc, p) => acc + (p.costo * p.stock), 0),
-    ganancia: productos.reduce((acc, p) => acc + ((p.precio - p.costo) * p.stock), 0),
-    bajoStock: productos.filter(p => p.stock <= 5).length,
-    totalUnidades: productos.reduce((acc, p) => acc + p.stock, 0)
-  }), [productos]);
+  const agregarTalla = () => {
+    if (tallaInput.trim() && !tallas.includes(tallaInput.trim().toUpperCase())) {
+      setTallas([...tallas, tallaInput.trim().toUpperCase()]);
+      setTallaInput("");
+    }
+  };
 
-  const productosFiltrados = useMemo(() => {
-    const f = productos.filter(p => 
-      p.nombre.toLowerCase().includes(busqueda.toLowerCase()) &&
-      (filtroCategoria === "Todos" ? true : (filtroCategoria === "Agotándose" ? p.stock <= 5 : p.categoria === filtroCategoria))
-    );
-    if (orden === "precio-min") f.sort((a, b) => a.precio - b.precio);
-    if (orden === "precio-max") f.sort((a, b) => b.precio - a.precio);
-    return f;
-  }, [productos, busqueda, filtroCategoria, orden]);
+  const guardarProducto = async () => {
+    if (!user) return alert("Debes iniciar sesión");
+    if (!nombre || !precio || !stock) return alert("Faltan datos críticos: Nombre, Precio y Stock son obligatorios");
+
+    const datosBase = {
+      nombre,
+      descripcion,
+      precio: Number(precio),
+      costo: Number(costo) || 0,
+      stock: Number(stock),
+      oferta: esOferta,
+      descuento: porcentaje,
+      categoria,
+      tallas,
+      tipo_venta: tipoVenta,
+      modalidad_mayor: modalidadMayor,
+      minimo_mayor: modalidadMayor === "Al Mayor" ? Number(minimoMayor) : null,
+      user_id: user.id, 
+      imagenes: imagenes.length > 0 ? imagenes : ["https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=600"],
+    };
+
+    try {
+      const token = await getToken({ template: 'supabase' });
+      if (!token) {
+        alert("Tu sesión ha expirado. Por favor, recarga la página.");
+        return;
+      }
+      const supabase = await getSupabaseClient(token);
+
+      if (editandoId) {
+        const { error } = await supabase.from('productos').update(datosBase).eq('id', editandoId);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from('productos').insert([{
+          ...datosBase,
+          id: window.crypto.randomUUID()
+        }]);
+        if (error) throw error;
+      }
+
+      alert(editandoId ? "¡Producto actualizado!" : "¡Producto guardado con éxito!");
+      fetchProductos(); 
+      cerrarModal();    
+    } catch (err: unknown) {
+      const error = err as { message?: string; code?: string };
+      console.error("Error detallado:", error);
+      alert(`Error al guardar: ${error.message || "Error desconocido"}`);
+    }
+  };
 
   return (
-    <div className="min-h-screen bg-[#f8fafc] pb-20 text-slate-900 print:bg-white selection:bg-blue-600 selection:text-white">
-      
-      {/* NAVBAR CON GLASSMORPHISM */}
-      <nav className="bg-white/80 backdrop-blur-2xl border-b sticky top-0 z-[60] px-8 py-5 flex justify-between items-center print:hidden shadow-sm">
-        <motion.div initial={{ x: -20, opacity: 0 }} animate={{ x: 0, opacity: 1 }} className="flex items-center gap-4">
-          <div className="w-12 h-12 bg-gradient-to-br from-blue-600 to-indigo-700 rounded-2xl flex items-center justify-center shadow-xl shadow-blue-200">
-            <span className="text-2xl text-white font-bold">S</span>
-          </div>
-          <div>
-            <h1 className="text-2xl font-black bg-gradient-to-r from-blue-700 to-indigo-600 bg-clip-text text-transparent italic uppercase tracking-tighter leading-none">Store Virtual</h1>
-            <p className="text-[9px] font-black text-slate-400 tracking-[0.3em] uppercase mt-1">Inventory Management v2.0</p>
-          </div>
-        </motion.div>
-        
-        <div className="flex items-center gap-6">
-          <button onClick={() => window.print()} className="hidden md:flex items-center gap-2 px-6 py-3 bg-white border border-slate-100 rounded-2xl text-[10px] font-black uppercase shadow-sm hover:shadow-md transition-all active:scale-95">
-            <span>🖨️</span> Exportar a PDF
-          </button>
-          <div className="h-10 w-[1px] bg-slate-100"></div>
-          <UserButton afterSignOutUrl="/" appearance={{ elements: { userButtonAvatarBox: "w-11 h-11 border-2 border-white shadow-md" } }} />
+    <div className="min-h-screen bg-[#f8fafc] pb-20 text-slate-900 font-sans print:bg-white">
+      <nav className="bg-white/80 backdrop-blur-md border-b sticky top-0 z-40 px-8 py-4 flex justify-between items-center shadow-sm print:hidden">
+        <div className="flex items-center gap-3">
+          <span className="text-3xl">📦</span>
+          <h1 className="text-2xl font-black bg-gradient-to-r from-blue-700 via-indigo-600 to-purple-600 bg-clip-text text-transparent italic uppercase tracking-tighter">Store Virtual</h1>
+        </div>
+        <div className="flex items-center gap-4">
+          <button onClick={() => window.print()} className="p-2.5 bg-slate-100 rounded-xl hover:bg-slate-200 transition-all text-[10px] font-black uppercase px-5 border border-slate-200 shadow-sm">🖨️ Generar Reporte PDF</button>
+          <UserButton afterSignOutUrl="/" />
         </div>
       </nav>
 
-      <main className="p-8 max-w-[1600px] mx-auto">
-        
-        {/* DASHBOARD STATS */}
-        <motion.div variants={containerVariants} initial="hidden" animate="visible" className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-12 print:grid-cols-2">
-          {[
-            { label: "Inversión Total", val: `$${stats.inversion.toLocaleString()}`, icon: "💰", color: "text-slate-600", bg: "bg-white" },
-            { label: "Ganancia Estimada", val: `$${stats.ganancia.toLocaleString()}`, icon: "📈", color: "text-blue-600", bg: "bg-blue-50/50" },
-            { label: "Alertas de Stock", val: `${stats.bajoStock} items`, icon: "🚨", color: "text-red-600", bg: "bg-red-50/50" },
-            { label: "Unidades en Bodega", val: stats.totalUnidades, icon: "📦", color: "text-indigo-600", bg: "bg-indigo-50/50" }
-          ].map((s, i) => (
-            <motion.div key={i} variants={itemVariants} className={`${s.bg} p-8 rounded-[3.5rem] border border-slate-100 shadow-sm flex flex-col items-center text-center group hover:shadow-2xl transition-all duration-500`}>
-              <span className="text-4xl mb-4 group-hover:rotate-12 transition-transform">{s.icon}</span>
-              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">{s.label}</p>
-              <p className={`text-3xl font-black ${s.color}`}>{s.val}</p>
-            </motion.div>
-          ))}
-        </motion.div>
-
-        {/* BARRA DE ACCIONES Y FILTROS */}
-        <div className="mb-12 print:hidden space-y-8">
-          <div className="flex gap-3 overflow-x-auto pb-4 no-scrollbar">
-            {CATEGORIAS.map((cat) => (
-              <button 
-                key={cat} 
-                onClick={() => setFiltroCategoria(cat)}
-                className={`px-8 py-3 rounded-full text-[10px] font-black transition-all whitespace-nowrap border-2 ${
-                  filtroCategoria === cat 
-                  ? 'bg-slate-900 text-white border-slate-900 shadow-2xl shadow-slate-300' 
-                  : 'bg-white text-slate-400 border-slate-50 hover:border-blue-200'
-                }`}
-              >
-                {cat.toUpperCase()}
-              </button>
-            ))}
+      <main className="p-8 max-w-7xl mx-auto">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-10 print:grid-cols-2 print:mb-4">
+          <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-100 flex flex-col items-center">
+            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Inversión Total</p>
+            <p className="text-2xl font-black text-slate-900">${stats.inversion.toLocaleString()}</p>
           </div>
-
-          <div className="flex flex-col lg:flex-row gap-6">
-            <div className="relative flex-1 group">
-              <span className="absolute left-7 top-1/2 -translate-y-1/2 text-xl group-focus-within:scale-110 transition-transform">🔍</span>
-              <input 
-                type="text" 
-                placeholder="Buscar por nombre o descripción..." 
-                value={busqueda} 
-                onChange={(e) => setBusqueda(e.target.value)}
-                className="w-full p-7 pl-16 bg-white rounded-[2.5rem] shadow-sm outline-none border-2 border-transparent focus:border-blue-500/10 focus:shadow-2xl transition-all font-bold text-slate-700"
-              />
-            </div>
-            <div className="flex gap-4">
-              <select 
-                value={orden} 
-                onChange={(e) => setOrden(e.target.value)}
-                className="p-7 bg-white rounded-[2.2rem] font-black text-[10px] uppercase outline-none shadow-sm border-2 border-transparent hover:border-slate-100 cursor-pointer px-12 text-slate-500 appearance-none"
-              >
-                <option value="nombre">Ordenar: A-Z</option>
-                <option value="precio-min">Precio: Menor</option>
-                <option value="precio-max">Precio: Mayor</option>
-              </select>
-              <button 
-                onClick={() => setShowModal(true)}
-                className="px-14 py-7 bg-blue-600 text-white rounded-[2.5rem] font-black uppercase text-[11px] shadow-2xl shadow-blue-200 hover:bg-blue-700 hover:scale-105 active:scale-95 transition-all"
-              >
-                + Nuevo Producto
-              </button>
-            </div>
+          <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-100 flex flex-col items-center">
+            <p className="text-[10px] font-black text-blue-500 uppercase tracking-widest mb-1">Ganancia Proyectada</p>
+            <p className="text-2xl font-black text-blue-600">${stats.ganancia.toLocaleString()}</p>
+          </div>
+          <div className={`p-6 rounded-[2.5rem] shadow-sm border flex flex-col items-center transition-colors ${stats.bajoStock > 0 ? 'bg-amber-50 border-amber-200' : 'bg-white border-slate-100'}`}>
+            <p className="text-[10px] font-black text-amber-600 uppercase tracking-widest mb-1">Por Agotarse</p>
+            <p className="text-2xl font-black text-slate-900">{stats.bajoStock} items</p>
+          </div>
+          <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-100 flex flex-col items-center">
+            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Unidades en Almacén</p>
+            <p className="text-2xl font-black text-slate-900">{stats.totalUnidades}</p>
           </div>
         </div>
 
-        {/* GRID DE PRODUCTOS CON ANIMACIÓN DE LAYOUT */}
-        <LayoutGroup>
-          <motion.div layout variants={containerVariants} initial="hidden" animate="visible" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-10">
-            <AnimatePresence mode="popLayout">
-              {productosFiltrados.map((prod) => (
-                <motion.div 
-                  layout
-                  variants={itemVariants}
-                  initial="hidden"
-                  animate="visible"
-                  exit="exit"
-                  key={prod.id} 
-                  className="bg-white rounded-[4rem] overflow-hidden border border-slate-50 shadow-sm hover:shadow-[0_30px_60px_-15px_rgba(0,0,0,0.1)] transition-all duration-700 cursor-pointer group relative"
-                  onClick={() => setProductoSeleccionado(prod)}
-                >
-                  <div className="h-80 relative bg-slate-100 overflow-hidden">
-                    <img src={prod.imagenes[0]} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-1000" alt="" />
-                    {prod.oferta && (
-                      <div className="absolute top-7 left-7 bg-red-500 text-white text-[10px] font-black px-5 py-2 rounded-full shadow-xl animate-pulse italic">
-                        {prod.descuento}% OFF
-                      </div>
-                    )}
-                    <div className="absolute bottom-7 right-7 bg-white/95 backdrop-blur px-5 py-2 rounded-full text-[9px] font-black shadow-lg uppercase tracking-widest text-slate-800">
-                      {prod.categoria}
+        <div className="flex gap-2 overflow-x-auto pb-6 mb-4 no-scrollbar print:hidden">
+          {CATEGORIAS.map(cat => (
+            <motion.button key={cat} whileHover={{ y: -2 }} whileTap={{ scale: 0.95 }} onClick={() => setFiltroCategoria(cat)} className={`px-6 py-2.5 rounded-full text-[10px] font-black transition-all border shadow-sm ${filtroCategoria === cat ? 'bg-blue-600 text-white border-blue-600' : (cat === "Agotándose" ? 'bg-red-50 text-red-600 border-red-100' : 'bg-white text-slate-500 border-slate-100')}`}>
+              {cat.toUpperCase()}
+            </motion.button>
+          ))}
+        </div>
+
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 mb-12 print:hidden">
+          <div className="flex-1 max-w-xl">
+            <h2 className="text-4xl font-black text-slate-800 mb-4 tracking-tight uppercase italic drop-shadow-sm">Gestión de Almacén</h2>
+            <div className="relative">
+              <span className="absolute left-4 top-1/2 -translate-y-1/2 opacity-30 font-bold">🔍</span>
+              <input type="text" placeholder="Buscar por nombre o descripción..." value={busqueda} onChange={(e) => setBusqueda(e.target.value)} className="w-full pl-12 pr-4 py-4 bg-white rounded-[2rem] border-none ring-1 ring-slate-200 focus:ring-2 focus:ring-blue-500 shadow-sm outline-none transition-all text-slate-900" />
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <select value={orden} onChange={(e) => setOrden(e.target.value)} className="p-4 bg-white rounded-2xl border-none ring-1 ring-slate-200 font-bold text-xs shadow-sm cursor-pointer outline-none text-slate-900">
+              <option value="nombre">Orden: A-Z</option>
+              <option value="precio-min">Precio: Menor</option>
+              <option value="precio-max">Precio: Mayor</option>
+            </select>
+            <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={() => setShowModal(true)} className="px-8 py-4 bg-gradient-to-r from-blue-600 to-indigo-700 text-white rounded-2xl font-black shadow-lg uppercase text-[10px] tracking-widest border border-blue-400/20">
+              + Nuevo Registro
+            </motion.button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
+          <AnimatePresence mode="popLayout">
+            {productosFiltrados.map((prod) => (
+              <motion.div key={prod.id} layout initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.9 }} className="bg-white rounded-[2.5rem] overflow-hidden border border-slate-100 shadow-sm hover:shadow-2xl transition-all cursor-pointer group relative" onClick={() => { setProductoSeleccionado(prod); setFotoActual(0); }}>
+                {prod.oferta && <div className="absolute top-4 left-4 z-20 bg-red-500 text-white text-[10px] font-black px-3 py-1 rounded-full shadow-lg ring-2 ring-white">{prod.descuento}% OFF</div>}
+                <span className="absolute top-4 right-4 bg-white/90 backdrop-blur px-3 py-1 rounded-full text-[9px] font-black text-blue-600 z-20 uppercase border border-blue-50 shadow-sm">{prod.categoria}</span>
+                <div className="h-56 w-full bg-slate-50 overflow-hidden relative">
+                  {prod.stock <= 5 && (
+                    <div className="absolute inset-0 bg-amber-500/10 backdrop-blur-[1px] flex items-center justify-center z-10">
+                      <div className="bg-amber-500 text-white text-[9px] font-black px-4 py-1.5 rounded-full ring-2 ring-white shadow-lg animate-pulse">REPOSICIÓN</div>
                     </div>
+                  )}
+                  <img src={prod.imagenes[0]} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" alt="" />
+                </div>
+                <div className="p-6">
+                  <h4 className="font-bold text-slate-800 text-lg truncate mb-1">{prod.nombre}</h4>
+                  <div className="flex items-baseline gap-2 mt-2">
+                    <span className="text-2xl font-black text-slate-900">${prod.oferta ? (prod.precio * (1 - prod.descuento / 100)).toFixed(0) : prod.precio}</span>
                   </div>
-
-                  <div className="p-10">
-                    <h4 className="font-bold text-2xl truncate mb-2 text-slate-800 tracking-tight">{prod.nombre}</h4>
-                    <div className="flex items-center gap-3 mb-8">
-                      <p className="text-4xl font-black text-slate-900">${prod.precio}</p>
-                      {prod.oferta && <p className="text-lg text-slate-300 line-through font-bold">${(prod.precio / (1 - prod.descuento/100)).toFixed(0)}</p>}
+                  <div className="mt-4 p-3 bg-slate-50 rounded-2xl flex items-center justify-between print:hidden" onClick={e => e.stopPropagation()}>
+                    <button onClick={() => ajustarStock(prod.id, -1)} className="w-8 h-8 flex items-center justify-center bg-white rounded-xl shadow-sm text-red-500 font-black hover:bg-red-500 hover:text-white transition-all border border-slate-100">−</button>
+                    <div className="text-center">
+                      <span className="block text-[8px] font-black text-slate-400 uppercase">Stock</span>
+                      <span className={`text-sm font-black ${prod.stock <= 5 ? 'text-amber-600' : 'text-slate-700'}`}>{prod.stock}</span>
                     </div>
-
-                    <div className="flex justify-between items-center bg-slate-50/80 p-3 rounded-[2rem] mb-8" onClick={e => e.stopPropagation()}>
-                      <button onClick={() => ajustarStock(prod.id, -1)} className="w-14 h-14 bg-white rounded-2xl flex items-center justify-center font-black shadow-sm hover:bg-red-50 hover:text-red-500 transition-all active:scale-90">-</button>
-                      <div className="text-center">
-                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Existencia</p>
-                        <p className={`text-xl font-black ${prod.stock <= 5 ? 'text-red-500 animate-pulse' : 'text-slate-800'}`}>{prod.stock}</p>
-                      </div>
-                      <button onClick={() => ajustarStock(prod.id, 1)} className="w-14 h-14 bg-white rounded-2xl flex items-center justify-center font-black shadow-sm hover:bg-green-50 hover:text-green-500 transition-all active:scale-90">+</button>
-                    </div>
-
-                    <div className="flex justify-between items-center" onClick={e => e.stopPropagation()}>
-                      <div className="flex gap-3">
-                        <button onClick={() => { 
-                          setEditandoId(prod.id); setNombre(prod.nombre); setDescripcion(prod.descripcion); setPrecio(prod.precio.toString()); setCosto(prod.costo.toString()); setStock(prod.stock.toString()); setCategoria(prod.categoria); setTallasSel(prod.tallas || []); setEsOferta(prod.oferta); setPorcentaje(prod.descuento); setImagenes(prod.imagenes); setTipoVenta(prod.tipoventa); setModalidadMayor(prod.modalidadmayor); setMinimoMayor(prod.minimomayor?.toString() || ""); setShowModal(true); 
-                        }} className="w-14 h-14 bg-blue-50 text-blue-600 rounded-[1.5rem] flex items-center justify-center hover:bg-blue-600 hover:text-white transition-all shadow-sm">✏️</button>
-                        <button onClick={() => borrarProducto(prod.id)} className="w-14 h-14 bg-red-50 text-red-600 rounded-[1.5rem] flex items-center justify-center hover:bg-red-600 hover:text-white transition-all shadow-sm">🗑️</button>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-[9px] font-black text-slate-400 uppercase">Costo Base</p>
-                        <p className="font-bold text-slate-400 text-sm italic">${prod.costo}</p>
-                      </div>
-                    </div>
+                    <button onClick={() => ajustarStock(prod.id, 1)} className="w-8 h-8 flex items-center justify-center bg-white rounded-xl shadow-sm text-blue-500 font-black hover:bg-blue-500 hover:text-white transition-all border border-slate-100">+</button>
                   </div>
-                </motion.div>
-              ))}
-            </AnimatePresence>
-          </motion.div>
-        </LayoutGroup>
-
-        {/* MODAL DETALLE PRODUCTO (FULL SCREEN EXPERIENCE) */}
-        <AnimatePresence>
-          {productoSeleccionado && (
-            <div className="fixed inset-0 bg-slate-900/95 backdrop-blur-2xl flex items-center justify-center z-[100] p-6" onClick={() => setProductoSeleccionado(null)}>
-              <motion.div 
-                initial={{ opacity: 0, scale: 0.9, y: 50 }} 
-                animate={{ opacity: 1, scale: 1, y: 0 }} 
-                exit={{ opacity: 0, scale: 0.9, y: 50 }}
-                className="bg-white w-full max-w-7xl rounded-[5rem] overflow-hidden flex flex-col md:flex-row h-[90vh] shadow-[0_50px_100px_-20px_rgba(0,0,0,0.5)]"
-                onClick={e => e.stopPropagation()}
-              >
-                <div className="md:w-3/5 bg-slate-950 relative flex items-center justify-center p-12 group">
-                  <img src={productoSeleccionado.imagenes[fotoActual]} className="max-h-full max-w-full object-contain drop-shadow-[0_20px_80px_rgba(255,255,255,0.15)] transition-transform duration-700 group-hover:scale-105" alt="" />
-                  
-                  {/* Navegación Fotos */}
-                  <div className="absolute bottom-12 left-1/2 -translate-x-1/2 flex gap-4 bg-black/20 p-3 rounded-full backdrop-blur-xl">
-                    {productoSeleccionado.imagenes.map((_, i) => (
-                      <button key={i} onClick={() => setFotoActual(i)} className={`w-4 h-4 rounded-full transition-all ${fotoActual === i ? 'bg-white w-12' : 'bg-white/30 hover:bg-white/50'}`} />
-                    ))}
+                  <div className="mt-6 pt-4 border-t border-slate-50 flex justify-between items-center print:hidden" onClick={e => e.stopPropagation()}>
+                    <span className="text-[9px] font-black text-green-600 bg-green-50 px-2 py-1 rounded-lg">Margen: ${prod.precio - prod.costo}</span>
+                    <div className="flex gap-2">
+                      <button onClick={() => { 
+                        setEditandoId(prod.id); setNombre(prod.nombre); setDescripcion(prod.descripcion); setPrecio(prod.precio.toString()); setCosto(prod.costo.toString()); setStock(prod.stock.toString()); setCategoria(prod.categoria); setTallas(prod.tallas || []); setTipoVenta(prod.tipo_venta); setModalidadMayor(prod.modalidad_mayor); setMinimoMayor(prod.minimo_mayor?.toString() || ""); setShowModal(true); 
+                      }} className="p-2 text-blue-600 bg-blue-50 rounded-xl hover:bg-blue-600 hover:text-white transition-all">✏️</button>
+                      <button onClick={() => borrarProducto(prod.id)} className="p-2 text-red-600 bg-red-50 rounded-xl hover:bg-red-600 hover:text-white transition-all">🗑️</button>
+                    </div>
                   </div>
                 </div>
-                
-                <div className="md:w-2/5 p-20 overflow-y-auto bg-white flex flex-col">
-                  <div className="flex justify-between items-start mb-12">
-                    <div>
-                      <span className="px-6 py-2 bg-blue-50 text-blue-700 rounded-full text-[11px] font-black uppercase tracking-[0.2em]">{productoSeleccionado.categoria}</span>
-                      <h3 className="text-6xl font-black text-slate-900 mt-8 leading-none tracking-tighter italic">{productoSeleccionado.nombre}</h3>
-                    </div>
-                    <button onClick={() => setProductoSeleccionado(null)} className="w-14 h-14 bg-slate-50 rounded-full flex items-center justify-center text-2xl hover:bg-slate-100 transition-all hover:rotate-90">✕</button>
-                  </div>
+              </motion.div>
+            ))}
+          </AnimatePresence>
+        </div>
 
-                  <p className="text-slate-500 font-medium text-xl leading-relaxed mb-12 italic">"{productoSeleccionado.descripcion || "Sin descripción detallada por el momento."}"</p>
-                  
-                  {/* Tallas en Detalle */}
-                  <div className="mb-12">
-                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Tallas Disponibles</p>
-                    <div className="flex flex-wrap gap-3">
-                      {productoSeleccionado.tallas?.length > 0 ? productoSeleccionado.tallas.map(t => (
-                        <span key={t} className="px-6 py-3 bg-slate-900 text-white rounded-2xl font-black text-xs shadow-lg">{t}</span>
-                      )) : <span className="text-slate-300 font-bold italic">No especificado</span>}
+        <AnimatePresence>
+          {productoSeleccionado && (
+            <div className="fixed inset-0 bg-slate-900/95 backdrop-blur-md flex items-center justify-center z-50 p-4" onClick={() => setProductoSeleccionado(null)}>
+              <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="bg-white w-full max-w-5xl rounded-[3rem] overflow-hidden flex flex-col md:flex-row h-[620px] shadow-2xl" onClick={e => e.stopPropagation()}>
+                <div className="md:w-1/2 bg-black relative flex items-center justify-center h-full">
+                  <img src={productoSeleccionado.imagenes[fotoActual]} className="w-full h-full object-contain" alt="" />
+                  {productoSeleccionado.imagenes.length > 1 && (
+                    <div className="absolute inset-x-6 flex justify-between">
+                      <button onClick={(e) => { e.stopPropagation(); setFotoActual(v => (v > 0 ? v - 1 : productoSeleccionado.imagenes.length - 1)); }} className="p-4 bg-white/10 text-white rounded-full hover:bg-white/20 transition-all">◀</button>
+                      <button onClick={(e) => { e.stopPropagation(); setFotoActual(v => (v < productoSeleccionado.imagenes.length - 1 ? v + 1 : 0)); }} className="p-4 bg-white/10 text-white rounded-full hover:bg-white/20 transition-all">▶</button>
+                    </div>
+                  )}
+                </div>
+                <div className="md:w-1/2 p-12 flex flex-col bg-white overflow-y-auto h-full text-slate-900">
+                  <div className="flex justify-between items-start">
+                    <span className="px-4 py-1.5 bg-blue-50 text-blue-600 rounded-full text-[10px] font-black uppercase tracking-widest border border-blue-100">{productoSeleccionado.categoria}</span>
+                    <button onClick={() => setProductoSeleccionado(null)} className="text-slate-300 hover:text-red-500 font-bold text-xl">✕</button>
+                  </div>
+                  <h3 className="text-3xl font-black text-slate-900 mt-6 leading-tight">{productoSeleccionado.nombre}</h3>
+                  <div className="grid grid-cols-2 gap-4 mt-8">
+                    <div className="bg-slate-50 p-6 rounded-[2.5rem] border border-slate-100 text-center">
+                      <p className="text-[10px] font-black text-slate-400 uppercase mb-1">Precio Público</p>
+                      <p className="text-3xl font-black text-slate-900">${productoSeleccionado.precio}</p>
+                    </div>
+                    <div className="bg-slate-50 p-6 rounded-[2.5rem] border border-slate-100 text-center">
+                      <p className="text-[10px] font-black text-green-500 uppercase mb-1">Costo Almacén</p>
+                      <p className="text-3xl font-black text-green-600">${productoSeleccionado.costo}</p>
                     </div>
                   </div>
-
-                  <div className="grid grid-cols-2 gap-8 mb-16">
-                    <div className="bg-slate-50 p-10 rounded-[3rem] border border-slate-100">
-                      <p className="text-[11px] font-black text-slate-400 uppercase tracking-widest mb-3 text-center">Precio Público</p>
-                      <p className="text-5xl font-black text-slate-900 text-center">${productoSeleccionado.precio}</p>
+                  <div className="mt-8 space-y-3">
+                    <div className="p-5 bg-orange-50 rounded-[2rem] border border-orange-100 flex justify-between items-center shadow-sm">
+                      <span className="text-[10px] text-orange-400 font-black uppercase tracking-widest">Forma de Venta</span>
+                      <span className="text-orange-600 font-black text-xs italic uppercase">Por {productoSeleccionado.tipo_venta}</span>
                     </div>
-                    <div className="bg-slate-50 p-10 rounded-[3rem] border border-slate-100 text-center">
-                      <p className="text-[11px] font-black text-slate-400 uppercase tracking-widest mb-3">Disponible</p>
-                      <p className={`text-5xl font-black ${productoSeleccionado.stock <= 5 ? 'text-red-500' : 'text-slate-900'}`}>{productoSeleccionado.stock}</p>
+                    <div className="p-5 bg-purple-50 rounded-[2rem] border border-purple-100 flex justify-between items-center shadow-sm">
+                      <span className="text-[10px] text-purple-400 font-black uppercase tracking-widest">Modalidad</span>
+                      <span className="text-purple-600 font-black text-xs italic uppercase">
+                        {productoSeleccionado.modalidad_mayor}
+                        {productoSeleccionado.modalidad_mayor === "Al Mayor" && ` (Mín: ${productoSeleccionado.minimo_mayor} u.)`}
+                      </span>
                     </div>
                   </div>
-
-                  <div className="mt-auto space-y-4">
-                    <button 
-                      onClick={() => window.open(`https://wa.me/?text=${encodeURIComponent('🔥 *NUEVO PRODUCTO DISPONIBLE* 🔥\n\n🛍️ *Item:* ' + productoSeleccionado.nombre + '\n💰 *Precio:* $' + productoSeleccionado.precio + '\n📦 *Stock:* ' + productoSeleccionado.stock + '\n📏 *Tallas:* ' + productoSeleccionado.tallas?.join(', ') + '\n\n_¡Pide el tuyo ahora!_')}`)}
-                      className="w-full py-7 bg-green-500 text-white rounded-[3rem] font-black uppercase text-xs shadow-2xl shadow-green-100 hover:bg-green-600 hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-4"
-                    >
-                      <span className="text-2xl">📱</span> Enviar Catálogo WhatsApp
-                    </button>
+                  {productoSeleccionado.categoria === "Ropa" && productoSeleccionado.tallas && productoSeleccionado.tallas.length > 0 && (
+                    <div className="mt-6 p-6 bg-indigo-50 rounded-[2rem] text-center border border-indigo-100">
+                      <p className="text-[10px] font-black text-indigo-400 uppercase mb-3 tracking-widest">Tallas Disponibles</p>
+                      <div className="flex gap-2 flex-wrap justify-center">
+                        {productoSeleccionado.tallas.map(t => <span key={t} className="px-3 py-1.5 bg-white text-indigo-600 rounded-xl text-xs font-black shadow-sm">{t}</span>)}
+                      </div>
+                    </div>
+                  )}
+                  <div className="mt-8">
+                    <p className="text-[10px] font-black text-slate-400 uppercase mb-2 ml-2 tracking-widest">Notas Internas</p>
+                    <div className="bg-slate-50 p-6 rounded-[2rem] text-gray-600 text-sm italic border border-slate-100">
+                      {productoSeleccionado.descripcion || "Sin descripción registrada."}
+                    </div>
                   </div>
+                  <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={() => {
+                    const mensaje = `*Info Almacén:* ${productoSeleccionado.nombre} \n💰 *Precio:* $${productoSeleccionado.precio} \n📦 *Stock:* ${productoSeleccionado.stock} u.`;
+                    window.open(`https://wa.me/?text=${encodeURIComponent(mensaje)}`, '_blank');
+                  }} className="mt-8 py-5 bg-green-500 text-white rounded-[2rem] font-black uppercase text-[10px] tracking-widest shadow-xl flex items-center justify-center gap-3">
+                    📱 Enviar Reporte WhatsApp
+                  </motion.button>
                 </div>
               </motion.div>
             </div>
           )}
         </AnimatePresence>
 
-        {/* MODAL REGISTRO (FORMULARIO EXTENDIDO) */}
         <AnimatePresence>
           {showModal && (
-            <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-xl flex items-center justify-center z-[100] p-6 overflow-y-auto">
-              <motion.div 
-                variants={modalVariants}
-                initial="hidden"
-                animate="visible"
-                exit="exit"
-                className="bg-white w-full max-w-4xl rounded-[5rem] p-16 shadow-2xl my-auto relative border border-white/20"
-                onClick={e => e.stopPropagation()}
-              >
-                <div className="mb-14 flex items-center gap-6">
-                  <div className="w-16 h-16 bg-blue-600 rounded-[2rem] flex items-center justify-center text-white text-2xl shadow-xl shadow-blue-200">
-                    {editandoId ? '✏️' : '✨'}
-                  </div>
+            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md flex items-center justify-center z-50 p-4 overflow-y-auto">
+              <motion.div initial={{ y: 50, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="bg-white w-full max-w-xl rounded-[3rem] p-10 shadow-2xl my-auto border border-slate-100">
+                <h3 className="text-2xl font-black mb-8 uppercase italic tracking-tight text-slate-800">Ficha de Registro Maestro</h3>
+                <div className="space-y-4">
                   <div>
-                    <h3 className="text-4xl font-black uppercase tracking-tighter text-slate-900 italic leading-none">
-                      {editandoId ? "Editar Registro" : "Nuevo Producto"}
-                    </h3>
-                    <p className="text-slate-400 font-bold text-[10px] mt-2 uppercase tracking-widest italic">Gestión Profesional de Inventario</p>
+                    <label className="text-[9px] font-black uppercase text-slate-400 ml-2 tracking-widest">Rubro del Producto</label>
+                    <select value={categoria} onChange={(e) => setCategoria(e.target.value)} className="w-full p-4 bg-slate-50 rounded-2xl border-none ring-1 ring-slate-200 mt-1 font-bold outline-none focus:ring-2 focus:ring-blue-500 transition-all text-slate-900">
+                      {CATEGORIAS.filter(c => c !== "Todos" && c !== "Agotándose").map(c => <option key={c} value={c}>{c}</option>)}
+                    </select>
                   </div>
-                </div>
-
-                <div className="space-y-8">
-                  {/* Seccion 1: Datos Básicos */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                    <div className="space-y-3">
-                      <label className="text-[11px] font-black uppercase text-slate-400 ml-6 tracking-widest">Nombre Comercial</label>
-                      <input value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder="Ej: Zapatillas Urban Air" className="w-full p-7 bg-slate-50 rounded-[2.5rem] outline-none font-bold text-slate-700 border-2 border-transparent focus:border-blue-500/10 transition-all shadow-inner" />
-                    </div>
-                    <div className="space-y-3">
-                      <label className="text-[11px] font-black uppercase text-slate-400 ml-6 tracking-widest">Categoría de Venta</label>
-                      <select value={categoria} onChange={(e) => setCategoria(e.target.value)} className="w-full p-7 bg-slate-50 rounded-[2.5rem] outline-none font-black text-slate-700 border-2 border-transparent focus:border-blue-500/10 transition-all appearance-none cursor-pointer">
-                        {CATEGORIAS.filter(c => c !== "Todos").map(c => <option key={c} value={c}>{c}</option>)}
-                      </select>
-                    </div>
-                  </div>
-
-                  {/* Sección 2: Precios y Stock */}
-                  <div className="grid grid-cols-3 gap-6">
-                    <div className="space-y-3">
-                      <label className="text-[11px] font-black uppercase text-slate-400 ml-6 tracking-widest">Costo Base</label>
-                      <input value={costo} onChange={(e) => setCosto(e.target.value)} type="number" placeholder="0" className="w-full p-7 bg-slate-50 rounded-[2.2rem] outline-none font-black border-2 border-transparent focus:border-blue-500/10 transition-all" />
-                    </div>
-                    <div className="space-y-3">
-                      <label className="text-[11px] font-black uppercase text-slate-400 ml-6 tracking-widest">PVP</label>
-                      <input value={precio} onChange={(e) => setPrecio(e.target.value)} type="number" placeholder="0" className="w-full p-7 bg-slate-50 rounded-[2.2rem] outline-none font-black border-2 border-transparent focus:border-blue-500/10 transition-all" />
-                    </div>
-                    <div className="space-y-3">
-                      <label className="text-[11px] font-black uppercase text-slate-400 ml-6 tracking-widest">Stock</label>
-                      <input value={stock} onChange={(e) => setStock(e.target.value)} type="number" placeholder="0" className="w-full p-7 bg-slate-50 rounded-[2.2rem] outline-none font-black border-2 border-transparent focus:border-blue-500/10 transition-all" />
-                    </div>
-                  </div>
-
-                  {/* Sección 3: Selector de Tallas Restaurado */}
-                  <div className="space-y-4">
-                    <p className="text-[11px] font-black uppercase text-slate-400 ml-6 tracking-widest">Configuración de Tallas</p>
-                    <div className="flex flex-wrap gap-2 p-6 bg-slate-50 rounded-[2.5rem] border border-slate-100">
-                      {TALLAS_DISPONIBLES.map(talla => (
-                        <button 
-                          key={talla} 
-                          onClick={() => toggleTalla(talla)}
-                          className={`px-5 py-3 rounded-2xl text-[10px] font-black transition-all ${
-                            tallasSel.includes(talla) 
-                            ? 'bg-blue-600 text-white shadow-lg shadow-blue-200 scale-105' 
-                            : 'bg-white text-slate-400 border border-slate-100 hover:border-blue-200'
-                          }`}
-                        >
-                          {talla}
-                        </button>
+                  {categoria === "Ropa" && (
+                    <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="p-5 bg-indigo-50 rounded-[2rem] border border-indigo-100 shadow-inner">
+                      <p className="text-[9px] font-black text-indigo-400 mb-2 uppercase tracking-widest ml-2">Gestión de Tallas</p>
+                      <div className="flex gap-2 mb-3">
+                        <input value={tallaInput} onChange={(e) => setTallaInput(e.target.value)} placeholder="Ej: M, L, 42..." className="flex-1 p-3 rounded-xl ring-1 ring-indigo-200 outline-none text-sm font-bold uppercase shadow-sm text-slate-900" />
+                        <button onClick={agregarTalla} className="px-4 bg-indigo-600 text-white rounded-xl font-bold shadow-md hover:bg-indigo-700">+</button>
+                      </div>
+                      <div className="flex gap-2 flex-wrap">
+                        {tallas.map(t => <span key={t} onClick={() => setTallas(tallas.filter(x => x !== t))} className="px-3 py-1.5 bg-white text-indigo-600 rounded-lg text-[10px] font-black border border-indigo-200 cursor-pointer hover:text-red-500 shadow-sm transition-all">{t} ✕</span>)}
+                      </div>
+                    </motion.div>
+                  )}
+                  <div className="p-6 bg-slate-50 rounded-[2.5rem] border border-slate-200 space-y-5 shadow-inner">
+                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest text-center">Configuración de Venta</p>
+                    <div className="grid grid-cols-3 gap-2">
+                      {["Unidad", "Docena", "Bulto"].map(modo => (
+                        <button key={modo} onClick={() => setTipoVenta(modo)} className={`p-3 rounded-xl text-[9px] font-black transition-all ${tipoVenta === modo ? 'bg-blue-600 text-white shadow-md' : 'bg-white text-blue-600 border border-blue-100'}`}>POR {modo.toUpperCase()}</button>
                       ))}
                     </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      {["Al Detal", "Al Mayor"].map(modo => (
+                        <button key={modo} onClick={() => setModalidadMayor(modo)} className={`p-3 rounded-xl text-[9px] font-black transition-all ${modalidadMayor === modo ? 'bg-purple-600 text-white shadow-md' : 'bg-white text-purple-600 border border-purple-100'}`}>{modo.toUpperCase()}</button>
+                      ))}
+                    </div>
+                    {modalidadMayor === "Al Mayor" && (
+                      <input type="number" value={minimoMayor} onChange={(e) => setMinimoMayor(e.target.value)} placeholder="Mínimo de unidades..." className="w-full p-4 bg-white rounded-2xl ring-1 ring-purple-100 text-xs font-bold outline-none text-slate-900" />
+                    )}
                   </div>
-
-                  {/* Sección 4: Modalidad Mayorista */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                     <div className="space-y-3">
-                       <label className="text-[11px] font-black uppercase text-slate-400 ml-6 tracking-widest">Modalidad</label>
-                       <select value={modalidadMayor} onChange={(e) => setModalidadMayor(e.target.value)} className="w-full p-6 bg-slate-50 rounded-[2rem] outline-none font-black border-2 border-transparent focus:border-blue-500/10 transition-all">
-                          <option value="Al Detal">Venta al Detal</option>
-                          <option value="Al Mayor">Venta al Mayor</option>
-                       </select>
-                     </div>
-                     {modalidadMayor === "Al Mayor" && (
-                       <div className="space-y-3 animate-in fade-in zoom-in duration-300">
-                         <label className="text-[11px] font-black uppercase text-slate-400 ml-6 tracking-widest">Mínimo Mayor</label>
-                         <input value={minimoMayor} onChange={(e) => setMinimoMayor(e.target.value)} type="number" placeholder="Cantidad mínima" className="w-full p-6 bg-blue-50/30 text-blue-700 rounded-[2rem] outline-none font-black border-2 border-blue-100" />
-                       </div>
-                     )}
+                  <div onClick={() => fileInputRef.current?.click()} className="w-full h-24 bg-slate-50 border-2 border-dashed border-slate-200 rounded-[2rem] flex items-center justify-center p-4 cursor-pointer overflow-x-auto">
+                    {imagenes.map((img, i) => <img key={i} src={img} className="h-full rounded-xl mr-2 shadow-sm" alt="" />)}
+                    {imagenes.length === 0 && <span className="text-[10px] font-black uppercase text-slate-400">📸 Subir Fotos</span>}
                   </div>
-
-                  {/* Sección 5: Ofertas */}
-                  <div className="grid grid-cols-2 gap-8">
-                    <button 
-                      onClick={() => setEsOferta(!esOferta)}
-                      className={`p-7 rounded-[2.5rem] flex justify-between items-center border-2 transition-all shadow-sm ${esOferta ? 'bg-red-50 border-red-100' : 'bg-slate-50 border-transparent'}`}
-                    >
-                      <span className={`text-[11px] font-black uppercase tracking-widest ${esOferta ? 'text-red-600' : 'text-slate-400'}`}>¿Habilitar Oferta?</span>
-                      <div className={`w-12 h-7 rounded-full relative transition-all ${esOferta ? 'bg-red-500' : 'bg-slate-300'}`}>
-                        <div className={`absolute top-1 w-5 h-5 bg-white rounded-full transition-all ${esOferta ? 'left-6' : 'left-1'}`} />
-                      </div>
-                    </button>
+                  <input type="file" ref={fileInputRef} onChange={handleMultipleImages} multiple accept="image/*" className="hidden" />
+                  <input value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder="Nombre del artículo" className="w-full p-4 bg-slate-50 rounded-2xl ring-1 ring-slate-200 font-bold outline-none text-slate-900" />
+                  <textarea value={descripcion} onChange={(e) => setDescripcion(e.target.value)} placeholder="Descripción..." className="w-full p-4 bg-slate-50 rounded-2xl h-24 resize-none ring-1 ring-slate-200 italic text-sm outline-none text-slate-900" />
+                  <div className="grid grid-cols-3 gap-3">
+                    <div>
+                      <label className="text-[8px] font-black ml-3 uppercase text-green-600">Costo $</label>
+                      <input value={costo} onChange={(e) => setCosto(e.target.value)} type="number" className="p-4 bg-green-50 rounded-2xl w-full ring-1 ring-green-200 font-bold outline-none text-slate-900" />
+                    </div>
+                    <div>
+                      <label className="text-[8px] font-black ml-3 uppercase text-blue-600">Venta $</label>
+                      <input value={precio} onChange={(e) => setPrecio(e.target.value)} type="number" className="p-4 bg-blue-50 rounded-2xl w-full ring-1 ring-blue-200 font-bold outline-none text-slate-900" />
+                    </div>
+                    <div>
+                      <label className="text-[8px] font-black ml-3 uppercase text-slate-500">Stock</label>
+                      <input value={stock} onChange={(e) => setStock(e.target.value)} type="number" className="p-4 bg-slate-100 rounded-2xl w-full ring-1 ring-slate-200 font-bold outline-none text-slate-900" />
+                    </div>
+                  </div>
+                  <div className={`p-6 rounded-[2.5rem] shadow-sm ${esOferta ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white' : 'bg-slate-50 text-slate-500 border border-slate-200'}`}>
+                    <div className="flex justify-between items-center font-black text-[10px] uppercase">
+                      <span>¿Activar Promoción?</span>
+                      <input type="checkbox" checked={esOferta} onChange={(e) => setEsOferta(e.target.checked)} className="w-5 h-5 accent-white cursor-pointer" />
+                    </div>
                     {esOferta && (
-                      <div className="relative group animate-in slide-in-from-left-6">
-                        <input value={porcentaje} onChange={(e) => setPorcentaje(Number(e.target.value))} type="number" placeholder="Descuento %" className="w-full p-7 bg-red-50/50 text-red-600 rounded-[2.5rem] outline-none font-black border-2 border-red-100" />
-                        <span className="absolute right-8 top-1/2 -translate-y-1/2 font-black text-red-200">%</span>
+                      <div className="mt-4 text-center">
+                        <input type="range" min="0" max="100" value={porcentaje} onChange={(e) => setPorcentaje(Number(e.target.value))} className="w-full accent-white" />
+                        <div className="font-black text-2xl mt-1">{porcentaje}% OFF</div>
                       </div>
                     )}
                   </div>
-
-                  {/* Sección 6: Galería Multimedia */}
-                  <div className="p-10 bg-slate-50 rounded-[3rem] border-2 border-dashed border-slate-200">
-                    <div className="flex gap-4 overflow-x-auto pb-6 no-scrollbar">
-                       {imagenes.length === 0 && <div className="h-24 w-full flex items-center justify-center text-slate-300 font-bold text-[10px] uppercase tracking-[0.3em] italic">Arrastra tus fotos aquí</div>}
-                       {imagenes.map((img, i) => (
-                         <div key={i} className="relative group shrink-0">
-                           <img src={img} className="h-24 w-24 object-cover rounded-[1.5rem] shadow-xl border-4 border-white" alt="" />
-                           <button onClick={() => setImagenes(imagenes.filter((_, idx) => idx !== i))} className="absolute -top-3 -right-3 bg-red-500 text-white w-8 h-8 rounded-full text-xs opacity-0 group-hover:opacity-100 transition-all shadow-lg hover:scale-110">✕</button>
-                         </div>
-                       ))}
-                    </div>
-                    <button onClick={() => fileInputRef.current?.click()} className="w-full py-5 bg-white text-blue-600 rounded-[2rem] text-[10px] font-black uppercase tracking-widest shadow-sm hover:shadow-xl transition-all active:scale-[0.98] border border-blue-50">
-                      📸 Cargar Imágenes del Producto
-                    </button>
-                    <input type="file" multiple ref={fileInputRef} onChange={handleMultipleImages} className="hidden" />
-                  </div>
-
-                  {/* Acciones Finales */}
-                  <div className="flex gap-8 mt-12">
-                    <button onClick={cerrarModal} className="flex-1 py-7 font-black uppercase text-[11px] text-slate-400 hover:text-slate-600 tracking-[0.3em] transition-colors">Descartar</button>
-                    <button onClick={guardarProducto} className="flex-[2.5] py-7 bg-blue-600 text-white rounded-[3rem] font-black uppercase text-[12px] shadow-2xl shadow-blue-200 hover:bg-blue-700 hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-3">
-                      <span>💾</span> {editandoId ? "Actualizar Inventario" : "Finalizar y Guardar"}
-                    </button>
-                  </div>
+                </div>
+                <div className="mt-10 flex gap-4">
+                  <button onClick={cerrarModal} className="flex-1 text-[10px] font-black uppercase text-slate-400 hover:text-red-500 transition-colors">Cancelar</button>
+                  <button onClick={guardarProducto} className="flex-[2] py-5 bg-gradient-to-r from-blue-600 to-indigo-700 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-xl">
+                    Guardar en Registro
+                  </button>
                 </div>
               </motion.div>
             </div>
