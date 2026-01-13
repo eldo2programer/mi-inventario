@@ -37,7 +37,7 @@ export default function Dashboard() {
   const [showModal, setShowModal] = useState(false);
   const [editandoId, setEditandoId] = useState<string | null>(null);
   const [productoSeleccionado, setProductoSeleccionado] = useState<Producto | null>(null);
-  const [fotoActual] = useState(0);
+  const [fotoActual, setFotoActual] = useState(0);
 
   // Estados del Formulario
   const [nombre, setNombre] = useState("");
@@ -47,12 +47,12 @@ export default function Dashboard() {
   const [stock, setStock] = useState("");
   const [imagenes, setImagenes] = useState<string[]>([]);
   const [esOferta, setEsOferta] = useState(false);
-  const [porcentaje] = useState(0);
+  const [porcentaje, setPorcentaje] = useState(0);
   const [categoria, setCategoria] = useState("General");
   const [tallas, setTallas] = useState<string[]>([]);
-  const [tipoVenta] = useState("Unidad");
-  const [modalidadMayor] = useState("Al Detal");
-  const [minimoMayor] = useState("");
+  const [tipoVenta, setTipoVenta] = useState("Unidad");
+  const [modalidadMayor, setModalidadMayor] = useState("Al Detal");
+  const [minimoMayor, setMinimoMayor] = useState("");
 
   useEffect(() => {
     if (isLoaded && user) fetchProductos();
@@ -75,7 +75,7 @@ export default function Dashboard() {
     if (!user) return alert("Debes iniciar sesión");
     if (!nombre || !precio || !stock) return alert("Faltan datos críticos");
 
-const datosBase = {
+    const datosBase = {
       nombre,
       descripcion,
       precio: Number(precio),
@@ -110,10 +110,9 @@ const datosBase = {
       alert("Éxito al guardar");
       fetchProductos(); 
       cerrarModal();    
-    } catch (err) {
-      const mensaje = err instanceof Error ? err.message : "Error desconocido";
-      console.error("Error detallado:", err);
-      alert(`Error: ${mensaje}`);
+    } catch (err: unknown) {
+      const error = err as Error;
+      alert(`Error: ${error.message}`);
     }
   };
 
@@ -127,7 +126,6 @@ const datosBase = {
       fetchProductos();
     } catch (err) {
       console.error("Error al borrar:", err);
-      alert("Error al eliminar");
     }
   };
 
@@ -149,7 +147,7 @@ const datosBase = {
   const cerrarModal = () => {
     setShowModal(false); setEditandoId(null); setNombre(""); setDescripcion(""); setPrecio(""); setCosto("");
     setStock(""); setImagenes([]); setEsOferta(false); setCategoria("General");
-    setTallas([]);
+    setTallas([]); setPorcentaje(0);
   };
 
   const stats = useMemo(() => ({
@@ -192,6 +190,7 @@ const datosBase = {
       </nav>
 
       <main className="p-8 max-w-7xl mx-auto">
+        {/* Stats */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-10 print:grid-cols-2">
           <div className="bg-white p-6 rounded-[2.5rem] border border-slate-100 text-center">
             <p className="text-[10px] font-black text-slate-400 uppercase">Inversión</p>
@@ -211,12 +210,14 @@ const datosBase = {
           </div>
         </div>
 
+        {/* Categorías */}
         <div className="flex gap-2 overflow-x-auto pb-6 no-scrollbar print:hidden">
           {CATEGORIAS.map(cat => (
-            <button key={cat} onClick={() => setFiltroCategoria(cat)} className={`px-6 py-2 rounded-full text-[10px] font-black border ${filtroCategoria === cat ? 'bg-blue-600 text-white' : 'bg-white text-slate-50'}`}>{cat.toUpperCase()}</button>
+            <button key={cat} onClick={() => setFiltroCategoria(cat)} className={`px-6 py-2 rounded-full text-[10px] font-black border transition-all ${filtroCategoria === cat ? 'bg-blue-600 text-white shadow-lg' : 'bg-white text-slate-400 hover:border-blue-200'}`}>{cat.toUpperCase()}</button>
           ))}
         </div>
 
+        {/* Buscador */}
         <div className="flex flex-col lg:flex-row justify-between gap-6 mb-12 print:hidden">
           <input type="text" placeholder="Buscar..." value={busqueda} onChange={(e) => setBusqueda(e.target.value)} className="flex-1 p-4 bg-white rounded-[2rem] shadow-sm outline-none" />
           <div className="flex gap-3">
@@ -229,6 +230,7 @@ const datosBase = {
           </div>
         </div>
 
+        {/* Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
           {productosFiltrados.map((prod) => (
             <div key={prod.id} className="bg-white rounded-[2.5rem] overflow-hidden border border-slate-100 shadow-sm hover:shadow-xl transition-all cursor-pointer group" onClick={() => setProductoSeleccionado(prod)}>
@@ -246,7 +248,7 @@ const datosBase = {
                 </div>
                 <div className="mt-4 pt-4 border-t flex justify-end gap-2" onClick={e => e.stopPropagation()}>
                   <button onClick={() => { 
-                    setEditandoId(prod.id); setNombre(prod.nombre); setDescripcion(prod.descripcion); setPrecio(prod.precio.toString()); setCosto(prod.costo.toString()); setStock(prod.stock.toString()); setCategoria(prod.categoria); setTallas(prod.tallas || []); setShowModal(true); 
+                    setEditandoId(prod.id); setNombre(prod.nombre); setDescripcion(prod.descripcion); setPrecio(prod.precio.toString()); setCosto(prod.costo.toString()); setStock(prod.stock.toString()); setCategoria(prod.categoria); setTallas(prod.tallas || []); setEsOferta(prod.oferta); setPorcentaje(prod.descuento); setImagenes(prod.imagenes); setShowModal(true); 
                   }} className="p-2 bg-blue-50 text-blue-600 rounded-lg">✏️</button>
                   <button onClick={() => borrarProducto(prod.id)} className="p-2 bg-red-50 text-red-600 rounded-lg">🗑️</button>
                 </div>
@@ -255,6 +257,7 @@ const datosBase = {
           ))}
         </div>
 
+        {/* Modal Detalle */}
         <AnimatePresence>
           {productoSeleccionado && (
             <div className="fixed inset-0 bg-slate-900/90 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setProductoSeleccionado(null)}>
@@ -262,7 +265,7 @@ const datosBase = {
                 <div className="md:w-1/2 bg-black flex items-center justify-center">
                   <img src={productoSeleccionado.imagenes[fotoActual]} className="max-h-full object-contain" alt="" />
                 </div>
-                <div className="md:w-1/2 p-10 overflow-y-auto">
+                <div className="md:w-1/2 p-10 overflow-y-auto bg-white flex flex-col">
                   <div className="flex justify-between">
                     <span className="px-3 py-1 bg-blue-50 text-blue-600 rounded-full text-[10px] font-black uppercase">{productoSeleccionado.categoria}</span>
                     <button onClick={() => setProductoSeleccionado(null)} className="font-bold">✕</button>
@@ -278,13 +281,14 @@ const datosBase = {
                       <p className="text-2xl font-black">{productoSeleccionado.stock}</p>
                     </div>
                   </div>
-                  <button onClick={() => window.open(`https://wa.me/?text=${encodeURIComponent(productoSeleccionado.nombre + ' - $' + productoSeleccionado.precio)}`)} className="w-full mt-8 py-4 bg-green-500 text-white rounded-2xl font-black uppercase text-[10px]">📱 WhatsApp Report</button>
+                  <button onClick={() => window.open(`https://wa.me/?text=${encodeURIComponent(productoSeleccionado.nombre + ' - $' + productoSeleccionado.precio)}`)} className="w-full mt-auto py-4 bg-green-500 text-white rounded-2xl font-black uppercase text-[10px]">📱 WhatsApp Report</button>
                 </div>
               </motion.div>
             </div>
           )}
         </AnimatePresence>
 
+        {/* Modal Registro */}
         <AnimatePresence>
           {showModal && (
             <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto">
@@ -300,24 +304,19 @@ const datosBase = {
                     <input value={precio} onChange={(e) => setPrecio(e.target.value)} type="number" placeholder="Venta" className="p-4 bg-slate-50 rounded-2xl outline-none font-bold" />
                     <input value={stock} onChange={(e) => setStock(e.target.value)} type="number" placeholder="Stock" className="p-4 bg-slate-50 rounded-2xl outline-none font-bold" />
                   </div>
-                  <div className="p-4 bg-slate-50 rounded-2xl flex justify-between items-center">
-                    <span className="text-[10px] font-black uppercase">¿Oferta?</span>
-                    <input type="checkbox" checked={esOferta} onChange={(e) => setEsOferta(e.target.checked)} />
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="p-4 bg-slate-50 rounded-2xl flex justify-between items-center">
+                      <span className="text-[10px] font-black uppercase">¿Oferta?</span>
+                      <input type="checkbox" checked={esOferta} onChange={(e) => setEsOferta(e.target.checked)} />
+                    </div>
+                    {esOferta && <input value={porcentaje} onChange={(e) => setPorcentaje(Number(e.target.value))} type="number" placeholder="%" className="p-4 bg-red-50 rounded-2xl font-bold" />}
                   </div>
                   <div className="p-4 bg-slate-50 rounded-2xl">
-                    <input 
-                      type="file" 
-                      multiple 
-                      ref={fileInputRef} 
-                      onChange={handleMultipleImages} 
-                      className="hidden" 
-                    />
-                    <button 
-                      onClick={() => fileInputRef.current?.click()}
-                      className="w-full py-2 bg-slate-200 rounded-xl text-[10px] font-black uppercase"
-                    >
-                      Añadir Fotos ({imagenes.length})
-                    </button>
+                    <div className="flex gap-2 overflow-x-auto mb-2">
+                       {imagenes.map((img, i) => <img key={i} src={img} className="h-12 w-12 object-cover rounded-lg" alt="" />)}
+                    </div>
+                    <button onClick={() => fileInputRef.current?.click()} className="w-full py-2 bg-slate-200 rounded-xl text-[10px] font-black uppercase">Añadir Fotos</button>
+                    <input type="file" multiple ref={fileInputRef} onChange={handleMultipleImages} className="hidden" />
                   </div>
                   <div className="flex gap-4 mt-8">
                     <button onClick={cerrarModal} className="flex-1 font-black uppercase text-[10px] text-slate-400">Cancelar</button>
