@@ -57,7 +57,8 @@ export default function Dashboard() {
 
   // --- FUNCIONES CORREGIDAS (Ordenadas para evitar errores de hoisting) ---
 
-  const cerrarModal = useCallback(() => {
+  const cerrarModal = () => {
+  setShowModal(false);
     setShowModal(false); setEditandoId(null); setNombre(""); setDescripcion(""); setPrecio(""); setCosto("");
     setStock(""); setImagenes([]); setEsOferta(false); setPorcentaje(0); setCategoria("General");
     setTallas([]); setTallaInput(""); setTipoVenta("Unidad"); setModalidadMayor("Al Detal"); setMinimoMayor("");
