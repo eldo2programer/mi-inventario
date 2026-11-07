@@ -55,10 +55,9 @@ export default function Dashboard() {
   const [modalidadMayor, setModalidadMayor] = useState("Al Detal");
   const [minimoMayor, setMinimoMayor] = useState("");
 
-  // --- FUNCIONES CORREGIDAS (Ordenadas para evitar errores de hoisting) ---
+  // --- FUNCIONES CORREGIDAS ---
 
-  const cerrarModal = () => {
-  setShowModal(false);
+  const cerrarModal = useCallback(() => {
     setShowModal(false); setEditandoId(null); setNombre(""); setDescripcion(""); setPrecio(""); setCosto("");
     setStock(""); setImagenes([]); setEsOferta(false); setPorcentaje(0); setCategoria("General");
     setTallas([]); setTallaInput(""); setTipoVenta("Unidad"); setModalidadMayor("Al Detal"); setMinimoMayor("");
@@ -69,9 +68,11 @@ export default function Dashboard() {
     try {
       const token = await getToken({ template: 'supabase' });
       const supabase = await getSupabaseClient(token);
+      
       const { data, error } = await supabase
         .from('productos')
         .select('*')
+        .eq('user_id', user.id) // Seguridad: Solo carga lo propio
         .order('nombre', { ascending: true });
 
       if (error) throw error;
@@ -118,11 +119,18 @@ export default function Dashboard() {
     const producto = productos.find(p => p.id === id);
     if (!producto || !user) return;
     const nuevoStock = Math.max(0, Number(producto.stock) + cant);
+    
     setProductos(prev => prev.map(p => p.id === id ? { ...p, stock: nuevoStock } : p));
+    
     try {
       const token = await getToken({ template: 'supabase' });
       const supabase = await getSupabaseClient(token);
-      const { error } = await supabase.from('productos').update({ stock: nuevoStock }).eq('id', id);
+      const { error } = await supabase
+        .from('productos')
+        .update({ stock: nuevoStock })
+        .eq('id', id)
+        .eq('user_id', user.id); // Seguridad añadida
+      
       if (error) throw error;
     } catch (error) {
       alert("Error: No se pudo sincronizar el stock.");
@@ -132,10 +140,17 @@ export default function Dashboard() {
 
   const borrarProducto = async (id: string) => {
     if (!confirm("¿Deseas eliminar este registro?")) return;
+    if (!user) return;
+    
     try {
       const token = await getToken({ template: 'supabase' });
       const supabase = await getSupabaseClient(token);
-      const { error } = await supabase.from('productos').delete().eq('id', id);
+      const { error } = await supabase
+        .from('productos')
+        .delete()
+        .eq('id', id)
+        .eq('user_id', user.id); // Seguridad añadida
+      
       if (error) throw error;
       fetchProductos();
     } catch (error) {
@@ -187,7 +202,11 @@ export default function Dashboard() {
       const supabase = await getSupabaseClient(token);
 
       if (editandoId) {
-        const { error } = await supabase.from('productos').update(datosBase).eq('id', editandoId);
+        const { error } = await supabase
+          .from('productos')
+          .update(datosBase)
+          .eq('id', editandoId)
+          .eq('user_id', user.id); // Seguridad añadida
         if (error) throw error;
       } else {
         const { error } = await supabase.from('productos').insert([{
